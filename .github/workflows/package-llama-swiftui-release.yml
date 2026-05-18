@@ -1,0 +1,110 @@
+name: Package llama.cpp SwiftUI iOS Runtime
+
+on:
+  workflow_dispatch:
+    inputs:
+      tag_name:
+        description: "Release tag"
+        required: true
+        default: "mindflux-llama-swiftui-v1"
+
+permissions:
+  contents: write
+
+jobs:
+  package:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout llama.cpp fork
+        uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - name: Inspect repo
+        run: |
+          echo "==== ROOT ===="
+          ls -la
+          echo "==== Relevant llama.cpp dirs ===="
+          find . -maxdepth 4 -type d | grep -E "examples|common|ggml|include|src|scripts|cmake" || true
+
+      - name: Create MindFlux llama package
+        run: |
+          rm -rf dist mindflux-llama-runtime
+          mkdir -p mindflux-llama-runtime
+
+          # Core llama.cpp runtime pieces
+          cp -R include mindflux-llama-runtime/
+          cp -R src mindflux-llama-runtime/
+          cp -R common mindflux-llama-runtime/
+          cp -R ggml mindflux-llama-runtime/
+
+          # iOS / SwiftUI example runtime
+          if [ -d examples/llama.swiftui ]; then
+            mkdir -p mindflux-llama-runtime/examples
+            cp -R examples/llama.swiftui mindflux-llama-runtime/examples/
+          else
+            echo "examples/llama.swiftui not found"
+            exit 1
+          fi
+
+          # Build/config files useful for integration
+          if [ -f CMakeLists.txt ]; then cp CMakeLists.txt mindflux-llama-runtime/; fi
+          if [ -d cmake ]; then cp -R cmake mindflux-llama-runtime/; fi
+          if [ -f LICENSE ]; then cp LICENSE mindflux-llama-runtime/; fi
+          if [ -f README.md ]; then cp README.md mindflux-llama-runtime/; fi
+
+          cat > mindflux-llama-runtime/MINDFLUX_NOTES.txt <<'EOF'
+          MindFlux llama.cpp SwiftUI Runtime Package
+
+          Purpose:
+          - Local GGUF model inference for MindFlux
+          - Intended for Qwen3-0.6B-Instruct GGUF or similar small local classifier models
+          - Used for silent structured JSON classification, not chatbot-first UI
+
+          Included:
+          - include/
+          - src/
+          - common/
+          - ggml/
+          - examples/llama.swiftui/
+          - CMakeLists.txt if present
+          - cmake/ if present
+          - LICENSE/README if present
+
+          Not included:
+          - model files
+          - build artifacts
+          - unrelated downloaded weights
+
+          Integration target:
+          - Native iOS / Swift / SwiftUI / Metal MindFlux app
+
+          Suggested MindFlux usage:
+          User thought
+            -> MiniLM CoreML embedding
+            -> semantic region matching
+            -> Qwen GGUF through llama.cpp
+            -> strict JSON classification
+            -> visual world activation
+          EOF
+
+      - name: Zip package
+        run: |
+          mkdir -p dist
+          zip -r dist/mindflux-llama-swiftui-runtime.zip mindflux-llama-runtime
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ github.event.inputs.tag_name }}
+          name: MindFlux llama.cpp SwiftUI Runtime ${{ github.event.inputs.tag_name }}
+          body: |
+            Packaged llama.cpp SwiftUI/iOS runtime integration bundle for MindFlux.
+
+            Includes the llama.cpp runtime pieces plus `examples/llama.swiftui`.
+
+            This release does not include GGUF model weights.
+          files: dist/mindflux-llama-swiftui-runtime.zip
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
